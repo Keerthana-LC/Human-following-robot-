@@ -1,0 +1,140 @@
+#include <ESP32Servo.h>
+#include <NewPing.h>
+
+// === Ultrasonic Sensor ===
+#define TRIG_PIN 4
+#define ECHO_PIN 5
+#define MAX_DISTANCE 200
+NewPing sonar(TRIG_PIN, ECHO_PIN, MAX_DISTANCE);
+
+// === IR Sensors ===
+#define RIGHT_IR 32
+#define LEFT_IR 33
+
+// === Servo ===
+Servo myservo;
+int servoPin = 15;
+
+// === L298N Motor Driver Pins (2-wheel, same as before) ===
+// Left Motor
+#define ENA 25
+#define IN1 26
+#define IN2 27
+// Right Motor
+#define IN3 12
+#define IN4 13
+#define ENB 14
+
+// === PWM Setup ===
+const int freq = 10000;
+const int pwmChannelA = 0;
+const int pwmChannelB = 1;
+const int resolution = 8;
+
+// === Motor Speeds ===
+int forwardSpeed = 200;
+int turnSpeed = 220;
+
+void setup() {
+  Serial.begin(115200);
+
+  // Motor pins
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  // IR sensors
+  pinMode(LEFT_IR, INPUT);
+  pinMode(RIGHT_IR, INPUT);
+
+  // PWM setup
+  ledcSetup(pwmChannelA, freq, resolution);
+  ledcSetup(pwmChannelB, freq, resolution);
+  ledcAttachPin(ENA, pwmChannelA);
+  ledcAttachPin(ENB, pwmChannelB);
+
+  // Servo setup
+  myservo.attach(servoPin, 500, 2400);
+
+  // === Servo rotates ONCE at startup ===
+  for (int pos = 90; pos <= 180; pos++) { myservo.write(pos); delay(10); }
+  for (int pos = 180; pos >= 0; pos--) { myservo.write(pos); delay(10); }
+  for (int pos = 0; pos <= 90; pos++) { myservo.write(pos); delay(10); }
+
+  stopMotors();
+  Serial.println("🤖 ESP32 2-Wheel Robot Ready! (Instant IR Response)");
+}
+
+void loop() {
+  // Read sensors
+  int distance = sonar.ping_cm();
+  int leftValue = digitalRead(LEFT_IR);
+  int rightValue = digitalRead(RIGHT_IR);
+
+  // === IR Motion Control ===
+  // If both detect -> move forward
+  if (leftValue == 0 && rightValue == 0) {
+    moveForward(forwardSpeed);
+    Serial.println("Forward");
+  }
+  // If only left detects -> turn left
+  else if (leftValue == 0 && rightValue == 1) {
+    moveLeft(turnSpeed);
+    Serial.println("Left");
+  }
+  // If only right detects -> turn right
+  else if (leftValue == 1 && rightValue == 0) {
+    moveRight(turnSpeed);
+    Serial.println("Right");
+  }
+  // Else -> stop
+  else {
+    stopMotors();
+    Serial.println("Stop");
+  }
+
+  // Display distance (for info only)
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+}
+
+// === Motor Control Functions ===
+void moveForward(int speed) {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  ledcWrite(pwmChannelA, speed);
+  ledcWrite(pwmChannelB, speed);
+}
+
+void moveLeft(int speed) {
+  // Pivot left
+  digitalWrite(IN1, LOW);   // left backward
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);  // right forward
+  digitalWrite(IN4, LOW);
+  ledcWrite(pwmChannelA, speed);
+  ledcWrite(pwmChannelB, speed);
+}
+
+void moveRight(int speed) {
+  // Pivot right
+  digitalWrite(IN1, HIGH);  // left forward
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);   // right backward
+  digitalWrite(IN4, HIGH);
+  ledcWrite(pwmChannelA, speed);
+  ledcWrite(pwmChannelB, speed);
+}
+
+void stopMotors() {
+  ledcWrite(pwmChannelA, 0);
+  ledcWrite(pwmChannelB, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+}
